@@ -3,6 +3,7 @@ import std/options
 import std/osproc
 import std/strutils
 import std/strformat
+import std/times
 import std/nre
 
 from std/macros import nil
@@ -42,19 +43,11 @@ template crash(why: string) =
   error why
   return 1
 
-proc `$`*(target: Target): string =
+proc `$`(target: Target): string =
   result = target.repo / target.package & target.ext
 
-proc `$`*(ver: Version): string =
+proc `$`(ver: Version): string =
   result = &"{ver.major}.{ver.minor}.{ver.patch}"
-
-proc relativeParentPath*(dir: string): string =
-  ## the parent directory as expressed relative to the directory supplied
-  result = dir / ParDir
-
-proc isFilesystemRoot*(dir: string): bool =
-  ## true if there are no higher directories in the fs tree
-  result = sameFile(dir, dir.relativeParentPath)
 
 proc isNamedLikeDotNimble(dir: string; file: string): bool =
   ## true if it the .nimble filename (minus ext) matches the directory
@@ -70,7 +63,7 @@ proc safeCurrentDir(): string =
   else:
     result = getCurrentDir()
 
-proc newTarget*(path: string): Target =
+proc newTarget(path: string): Target =
   let splat = path.splitFile
   result = (repo: splat.dir, package: splat.name, ext: splat.ext)
 
@@ -149,29 +142,21 @@ proc findTargetWith(dir: string; cwd: proc (): string; target = "";
   if refined.message != "" and result.message == "":
     return refined
 
-proc findTarget*(dir: string; target = ""): SearchResult =
+proc findTarget(dir: string; target = ""): SearchResult =
   ## locate one, and only one, nimble file to work upon; dir is where
   ## to start looking, target is a .nimble or package name
   result = findTargetWith(dir, safeCurrentDir, target = target)
 
-proc findTarget*(dir: string; target = ""; ascend = true;
-                 extensions: seq[string]): SearchResult =
-  ## locate one, and only one, nimble file to work upon; dir is where
-  ## to start looking, target is a .nimble or package name,
-  ## extensions list optional extensions (such as "nimble")
-  result = findTargetWith(dir, safeCurrentDir, target = target,
-                          ascend = ascend, extensions = extensions)
-
-proc createTemporaryFile*(prefix: string; suffix: string): string =
+proc createTemporaryFile(prefix: string; suffix: string): string =
   ## it SHOULD create the file, but so far, it only returns the filename
   let temp = getTempDir()
   result = temp / "bump-" & $getCurrentProcessId() & "-" & prefix & suffix
 
-proc isValid*(ver: Version): bool =
+proc isValid(ver: Version): bool =
   ## true if the version seems legit
   result = ver.major > 0'u or ver.minor > 0'u or ver.patch > 0'u
 
-proc parseVersion*(nimble: string): Option[Version] =
+proc parseVersion(nimble: string): Option[Version] =
   ## try to parse a version from any line in a .nimble;
   ## safe to use at compile-time
   for line in nimble.splitLines:
@@ -195,16 +180,10 @@ proc parseVersion*(nimble: string): Option[Version] =
     except ValueError:
       discard
 
-proc bumpVersion*(ver: Version; major, minor, patch = false): Option[Version] =
-  ## increment the version by the specified metric
-  if major:
-    result = (ver.major + 1'u, 0'u, 0'u).some
-  elif minor:
-    result = (ver.major, ver.minor + 1'u, 0'u).some
-  elif patch:
-    result = (ver.major, ver.minor, ver.patch + 1'u).some
+proc dateVer(dt: DateTime): Version =
+  (major: dt.year.uint, minor: dt.month.uint, patch: dt.monthDay.uint)
 
-proc withCrazySpaces*(version: Version; line = ""): string =
+proc withCrazySpaces(version: Version; line = ""): string =
   ## insert a new version into a line which may have "crazy spaces"
   while line != "":
     let
@@ -218,7 +197,7 @@ proc withCrazySpaces*(version: Version; line = ""): string =
     return
   result = &"""version = "{version}""""
 
-proc capture*(exe: string; args: seq[string];
+proc capture(exe: string; args: seq[string];
               options: set[ProcessOption]): tuple[output: string; ok: bool] =
   ## capture output of a command+args and indicate apparent success
   var
@@ -244,12 +223,12 @@ proc capture*(exe: string; args: seq[string];
   else:
     notice ran
 
-proc capture*(exe: string; args: seq[string]): tuple[output: string; ok: bool] =
+proc capture(exe: string; args: seq[string]): tuple[output: string; ok: bool] =
   ## find and run a given executable with the given arguments;
   ## the result includes stdout/stderr and a true value if it seemed to work
   result = capture(exe, args, {poStdErrToStdOut, poDaemon, poEvalCommand})
 
-proc run*(exe: string; args: varargs[string]): bool =
+proc run(exe: string; args: varargs[string]): bool =
   ## find and run a given executable with the given arguments;
   ## the result is true if it seemed to work
   var
@@ -262,7 +241,7 @@ proc run*(exe: string; args: varargs[string]): bool =
     notice caught.output
   result = caught.ok
 
-proc appearsToBeMasterBranch*(): Option[bool] =
+proc appearsToBeMasterBranch(): Option[bool] =
   ## try to determine if we're on the `master`/`main` branch
   var
     caught = capture("git", @["branch", "--show-current"])
@@ -276,7 +255,7 @@ proc appearsToBeMasterBranch*(): Option[bool] =
     result = caught.output.contains(re"(*ANYCRLF)(?m)(?x)^master|main$").some
   debug &"appears to be master/main branch? {result.get}"
 
-proc fetchTagList*(): Option[string] =
+proc fetchTagList(): Option[string] =
   ## simply retrieve the tags as a string; attempt to use the
   ## later git option to sort the result by version
   var
@@ -288,7 +267,7 @@ proc fetchTagList*(): Option[string] =
     return
   result = caught.output.strip.some
 
-proc lastTagInTheList*(tagList: string): string =
+proc lastTagInTheList(tagList: string): string =
   ## lazy way to get a tag from the list, whatfer mimicking its V form
   let
     verex = re("(*ANYCRLF)(?i)(?m)^v?\\.?\\d+\\.\\d+\\.\\d+$")
@@ -298,7 +277,7 @@ proc lastTagInTheList*(tagList: string): string =
     raise newException(ValueError, "could not identify a sane tag")
   debug &"the last tag in the list is `{result}`"
 
-proc taggedAs*(version: Version; tagList: string): Option[string] =
+proc taggedAs(version: Version; tagList: string): Option[string] =
   ## try to fetch a tag that appears to match a given version
   let
     escaped = replace($version, ".", "\\.")
@@ -313,7 +292,7 @@ proc taggedAs*(version: Version; tagList: string): Option[string] =
   if result.isSome:
     debug &"version {version} was tagged as {result.get}"
 
-proc allTagsAppearToStartWithV*(tagList: string): bool =
+proc allTagsAppearToStartWithV(tagList: string): bool =
   ## try to determine if all of this project's tags start with a `v`
   let
     splat = tagList.splitLines(keepEol = false)
@@ -362,7 +341,7 @@ proc shouldSearch(folder: string; nimble: string):
   debug &"should search `{dir}` for `{file}`"
   result = (dir: dir, file: file).some
 
-proc pluckVAndDot*(input: string): string =
+proc pluckVAndDot(input: string): string =
   ## return any `V` or `v` prefix, perhaps with an existing `.`
   if input.len == 0 or input[0] notin {'V', 'v'}:
     result = ""
@@ -371,7 +350,7 @@ proc pluckVAndDot*(input: string): string =
   else:
     result = input[0 .. 0]
 
-proc composeTag*(last: Version; next: Version; v = false; tags = ""):
+proc composeTag(last: Version; next: Version; v = false; tags = ""):
   Option[string] =
   ## invent a tag given last and next version, magically adding any
   ## needed `v` prefix.  fetches tags if a tag list isn't supplied.
@@ -418,7 +397,7 @@ proc composeTag*(last: Version; next: Version; v = false; tags = ""):
   result = tag.some
   debug &"composed the tag `{result.get}`"
 
-proc bump*(minor = false; major = false; patch = true; release = false;
+proc bump(release = false;
           dry_run = false; folder = ""; nimble = ""; log_level = logLevel;
           commit = false; v = false; manual = ""; message: seq[string]): int =
   ## the entry point from the cli
@@ -501,12 +480,12 @@ proc bump*(minor = false; major = false; patch = true; release = false;
       # if we haven't set the new version yet, bump the version number
       if not next.isValid:
         let
-          bumped = last.get.bumpVersion(major, minor, patch)
-        if bumped.isNone:
-          crash "version unchanged; specify major, minor, or patch"
+          bumped = now().dateVer
+        if bumped == last.get:
+          crash "there has already been a new version today, please wait until tomorrow"
         else:
-          debug "next version is", bumped.get
-        next = bumped.get
+          debug "next version is", bumped
+        next = bumped
 
       # make a subtle edit to the version string and write it out
       writer.writeLine next.withCrazySpaces(line)
@@ -588,7 +567,7 @@ proc bump*(minor = false; major = false; patch = true; release = false;
   fatal "🐼nimgitsfu fail"
   return 1
 
-proc projectVersion*(hint = ""): Option[Version] {.compileTime.} =
+proc projectVersion(hint = ""): Option[Version] {.compileTime.} =
   ## try to get the version from the current (compile-time) project
   let
     target = findTargetWith(macros.getProjectPath(), safeCurrentDir, hint)
@@ -611,17 +590,17 @@ when isMainModule:
 
   const logo = """
 
-      __
-     / /_  __  ______ ___  ____
-    / __ \/ / / / __ `__ \/ __ \
-   / /_/ / /_/ / / / / / / /_/ /
-  /_.___/\__,_/_/ /_/ /_/ .___/
-                       /_/
+       _
+    __| | __ _ _ __ ___  _ __
+   / _` |/ _` | '_ ` _ \| '_ \
+  | (_| | (_| | | | | | | |_) |
+   \__,_|\__,_|_| |_| |_| .__/
+                        |_|
 
-  Increment the version of a nimble package, tag it, and push it via git
+  Set the version of a nimble package to the current date, tag it, and push it via git
 
   Usage:
-    bump [optional-params] [message: string...]
+    damp [optional-params] [message: string...]
 
   """
   # find the version of bump itself, whatfer --version reasons
@@ -632,12 +611,9 @@ when isMainModule:
   else:
     clCfg.version = "(unknown version)"
 
-  dispatchCf bump, cmdName = "bump", cf = clCfg, noHdr = true,
+  dispatchCf bump, cmdName = "damp", cf = clCfg, noHdr = true,
     usage = logo & "Options(opt-arg sep :|=|spc):\n$options",
     help = {
-      "patch": "increment the patch version field",
-      "minor": "increment the minor version field",
-      "major": "increment the major version field",
       "dry-run": "just report the projected version",
       "commit": "also commit any other unstaged changes",
       "v": "prefix the version tag with an ugly `v`",

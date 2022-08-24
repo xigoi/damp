@@ -7,7 +7,7 @@ requires "https://github.com/disruptek/cutelog >= 1.1.2 & < 2.0.0"
 when not defined(release):
   requires "https://github.com/disruptek/balls >= 2.0.0 & < 4.0.0"
 
-bin = @["bump"]
+bin = @["damp"]
 
 when (NimMajor, NimMinor) >= (1, 3):
   requires "cligen >= 1.2.2 & < 2.0.0"
