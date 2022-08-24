@@ -1,6 +1,6 @@
-version = "1.8.29"
-author = "disruptek"
-description = "a tiny tool to bump nimble versions"
+version = "2022.8.24"
+author = "xigoi"
+description = "A fork of bump that uses DateVer"
 license = "MIT"
 
 requires "https://github.com/disruptek/cutelog >= 1.1.2 & < 2.0.0"
