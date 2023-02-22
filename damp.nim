@@ -180,8 +180,11 @@ proc parseVersion(nimble: string): Option[Version] =
     except ValueError:
       discard
 
-proc dateVer(dt: DateTime): Version =
-  (major: dt.year.uint, minor: dt.month.uint, patch: dt.monthDay.uint)
+proc dateVer(dt: DateTime, extended = false): Version =
+  if extended:
+    (major: dt.year.uint, minor: 100 * dt.month.uint + dt.monthDay.uint, patch: 0.uint)
+  else:
+    (major: dt.year.uint, minor: dt.month.uint, patch: dt.monthDay.uint)
 
 proc withCrazySpaces(version: Version; line = ""): string =
   ## insert a new version into a line which may have "crazy spaces"
@@ -397,7 +400,7 @@ proc composeTag(last: Version; next: Version; v = false; tags = ""):
   result = tag.some
   debug &"composed the tag `{result.get}`"
 
-proc bump(release = false;
+proc bump(release = false; extended = false;
           dry_run = false; folder = ""; nimble = ""; log_level = logLevel;
           commit = false; v = false; manual = ""; message: seq[string]): int =
   ## the entry point from the cli
@@ -479,12 +482,16 @@ proc bump(release = false;
 
       # if we haven't set the new version yet, bump the version number
       if not next.isValid:
-        let
-          bumped = now().dateVer
-        if bumped == last.get:
-          crash "there has already been a new version today, please wait until tomorrow"
-        else:
+        var bumped = now().dateVer(extended)
+        if extended:
+          if (bumped.major, bumped.minor) == (last.get.major, last.get.minor):
+            bumped.patch = last.get.patch.succ
           debug "next version is", bumped
+        else:
+          if bumped == last.get:
+            crash "there has already been a new version today, please wait until tomorrow"
+          else:
+            debug "next version is", bumped
         next = bumped
 
       # make a subtle edit to the version string and write it out
@@ -589,7 +596,6 @@ when isMainModule:
   addHandler(logger)
 
   const logo = """
-
        _
     __| | __ _ _ __ ___  _ __
    / _` |/ _` | '_ ` _ \| '_ \
@@ -617,6 +623,7 @@ when isMainModule:
       "dry-run": "just report the projected version",
       "commit": "also commit any other unstaged changes",
       "v": "prefix the version tag with an ugly `v`",
+      "extended": "use the format year.monthday.patch instead of year.month.day",
       "nimble": "specify the nimble file to modify",
       "folder": "specify the location of the nimble file",
       "release": "also use `hub` to issue a GitHub release",
