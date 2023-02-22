@@ -1,4 +1,4 @@
-version = "2022.8.24"
+version = "2023.222.0"
 author = "xigoi"
 description = "A fork of bump that uses DateVer"
 license = "MIT"
